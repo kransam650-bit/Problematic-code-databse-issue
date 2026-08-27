@@ -1,0 +1,10 @@
+{
+  "name": "Remix: Cath Data 2026",
+  "description": "A streamlined database for managing patient records, including age, gender, contact details, and medical reports with full search functionality.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

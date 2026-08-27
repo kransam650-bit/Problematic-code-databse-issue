@@ -1,0 +1,7 @@
+{
+  "name": "Remix: Cath Data 2026",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "react"
+}

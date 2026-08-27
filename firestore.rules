@@ -1,0 +1,151 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Phase 3: Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Phase 4: Validation Helpers
+    function isValidPatient(data, isUpdate) {
+      return data.keys().hasAll(['serialNo', 'admissionNo', 'name', 'age', 'gender', 'date', 'ejectionFraction', 'rwma', 'comorbidities', 'labPhotoUrl', 'phoneNumbers', 'access', 'usgDoppler', 'angiogramPhotoUrl', 'pciPhotoUrl', 'imaging', 'imagingPhotoUrl', 'specialHardware', 'complications', 'otherHardware', 'otherHardwareNotes', 'drugs', 'finalNotes', 'otherInfoPhotoUrl', 'notes', 'createdAt', 'createdBy'])
+        && data.keys().size() >= 27 && data.keys().size() <= 60
+        && data.serialNo is number && data.serialNo > 0
+        && data.admissionNo is string && data.admissionNo.size() > 0 && data.admissionNo.size() <= 100
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 200
+        && data.age is number && data.age >= 0 && data.age <= 150
+        && data.gender in ['Male', 'Female', 'Other']
+        && data.date is string && data.date.size() <= 20
+        && data.ejectionFraction in ['Normal', 'Mild LVSD', 'Moderate LVSD', 'Severe LVSD', 'LVH', 'HCM', 'HOCM', 'Other']
+        && (!data.keys().hasAny(['otherEjectionFractionNotes']) || (data.otherEjectionFractionNotes is string && data.otherEjectionFractionNotes.size() <= 1000))
+        && data.rwma is list && data.rwma.size() <= 10
+        && data.comorbidities is list && data.comorbidities.size() <= 10
+        && data.labPhotoUrl is string && data.labPhotoUrl.size() <= 2097152
+        && data.phoneNumbers is list && data.phoneNumbers.size() <= 10
+        && (!data.keys().hasAny(['weight']) || (data.weight is number || data.weight is string))
+        && (!data.keys().hasAny(['patientId']) || (data.patientId is string && data.patientId.size() <= 100))
+        && (!data.keys().hasAny(['height']) || (data.height is number || data.height is string))
+        && (!data.keys().hasAny(['bmi']) || (data.bmi is number || data.bmi is string))
+        && data.access in ['Rt radial', 'Lt radial', 'Rt femoral', 'Lt femoral', 'Other']
+        && data.usgDoppler is bool
+        && data.angiogramPhotoUrl is string && data.angiogramPhotoUrl.size() <= 2097152
+        && data.pciPhotoUrl is string && data.pciPhotoUrl.size() <= 2097152
+        && data.imaging is list && data.imaging.size() <= 10
+        && data.imagingPhotoUrl is string && data.imagingPhotoUrl.size() <= 2097152
+        && data.specialHardware is list && data.specialHardware.size() <= 10
+        && data.complications is list && data.complications.size() <= 10
+        && (!data.keys().hasAny(['complicationsCustom']) || (data.complicationsCustom is string && data.complicationsCustom.size() <= 1000))
+        && data.otherHardware is list && data.otherHardware.size() <= 10
+        && data.otherHardwareNotes is string && data.otherHardwareNotes.size() <= 1000
+        && data.drugs is list && data.drugs.size() <= 20
+        && data.finalNotes is string && data.finalNotes.size() <= 5000
+        && data.otherInfoPhotoUrl is string && data.otherInfoPhotoUrl.size() <= 2097152
+        && data.notes is string && data.notes.size() <= 5000
+        && (!data.keys().hasAny(['additionalOperators']) || data.additionalOperators is list)
+        && (!data.keys().hasAny(['isDeleted']) || data.isDeleted is bool)
+        && (!data.keys().hasAny(['deletedAt']) || (data.deletedAt is string && data.deletedAt.size() <= 100))
+        && (!data.keys().hasAny(['lesions']) || data.lesions is list)
+        && (!data.keys().hasAny(['stentDetails']) || data.stentDetails is list)
+        && (isUpdate ? true : data.createdAt == request.time)
+        && data.createdBy == request.auth.uid;
+    }
+
+    function isValidCounter(data) {
+      return data.keys().hasAll(['count']) && data.keys().size() == 1
+        && data.count is number && data.count >= 0;
+    }
+
+    function isValidPrintPreset(data) {
+      return data.keys().hasAll(['name', 'headerTitle', 'showHospitalHeader', 'textSizeScale', 'visibleSections', 'physicianName', 'createdAt', 'createdBy'])
+        && data.keys().size() == 8
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 200
+        && data.headerTitle is string && data.headerTitle.size() <= 200
+        && data.showHospitalHeader is bool
+        && data.textSizeScale in ['compact', 'normal', 'large']
+        && data.visibleSections is map
+        && data.visibleSections.keys().hasAll(['demographics', 'diagnostics', 'anatomy', 'pci', 'outcomes', 'photos', 'signatures'])
+        && data.visibleSections.keys().size() == 7
+        && data.visibleSections.demographics is bool
+        && data.visibleSections.diagnostics is bool
+        && data.visibleSections.anatomy is bool
+        && data.visibleSections.pci is bool
+        && data.visibleSections.outcomes is bool
+        && data.visibleSections.photos is bool
+        && data.visibleSections.signatures is bool
+        && data.physicianName is string && data.physicianName.size() <= 200
+        && data.createdAt is string && data.createdAt.size() <= 50
+        && data.createdBy == request.auth.uid;
+    }
+
+    function isOwner() {
+      return isSignedIn() && existing().createdBy == request.auth.uid;
+    }
+
+    // 1. Patients Collection
+    match /patients/{patientId} {
+      // 8. Secure List Queries: Avoid blanket reads
+      allow get: if isOwner();
+      allow list: if isSignedIn() && resource.data.createdBy == request.auth.uid;
+      
+      allow create: if isSignedIn() 
+        && isValidId(patientId)
+        && isValidPatient(incoming(), false);
+        
+      allow update: if isOwner()
+        && isValidId(patientId)
+        && isValidPatient(incoming(), true)
+        && incoming().serialNo == existing().serialNo
+        && incoming().createdAt == existing().createdAt
+        && incoming().createdBy == existing().createdBy
+        && (
+          // Action: Update Patient Info
+          incoming().diff(existing()).affectedKeys().hasOnly(['admissionNo', 'name', 'age', 'gender', 'date', 'ejectionFraction', 'rwma', 'comorbidities', 'labPhotoUrl', 'phoneNumbers', 'access', 'usgDoppler', 'angiogramPhotoUrl', 'pciPhotoUrl', 'imaging', 'imagingPhotoUrl', 'specialHardware', 'complications', 'complicationsCustom', 'otherHardware', 'otherHardwareNotes', 'drugs', 'finalNotes', 'otherInfoPhotoUrl', 'notes', 'tags', 'category', 'otherCategoryNotes', 'outcomes', 'tmt', 'presentation', 'updatedAt', 'bifurcation', 'isOther', 'otherAccessNotes', 'serNo', 'serviceCategory', 'pciVessels', 'devices', 'weight', 'height', 'bmi', 'otherEjectionFractionNotes', 'isDeleted', 'deletedAt', 'lesions', 'stentDetails', 'patientId', 'serialNo', 'preHb', 'preUrea', 'preCreatinine', 'preK', 'postHb', 'postUrea', 'postCreatinine', 'postK', 'demographicsPhotoUrl', 'imagingFindings', 'additionalOperators'])
+        );
+        
+      allow delete: if isOwner();
+    }
+
+    // 2. Counters Collection
+    match /counters/{counterId} {
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(counterId) && isValidCounter(incoming());
+      allow update: if isSignedIn() 
+        && isValidCounter(incoming())
+        && incoming().count == existing().count + 1;
+    }
+
+    // 3. Print Presets Collection
+    match /print_presets/{presetId} {
+      allow get, delete: if isSignedIn() && existing().createdBy == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.createdBy == request.auth.uid;
+      
+      allow create: if isSignedIn() 
+        && isValidId(presetId)
+        && isValidPrintPreset(incoming());
+        
+      allow update: if isSignedIn()
+        && existing().createdBy == request.auth.uid
+        && isValidId(presetId)
+        && isValidPrintPreset(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().createdBy == existing().createdBy;
+    }
+  }
+}
